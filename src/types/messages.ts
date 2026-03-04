@@ -6,7 +6,7 @@ import { ImageBlock, VideoBlock, DocumentBlock, encodeBase64, decodeBase64 } fro
 /**
  * Message types and content blocks for conversational AI interactions.
  *
- * This module follows a pattern where <name>Data interfaces define the structure
+ * This module follows a pattern where "Data" interfaces define the structure
  * for objects, while corresponding classes extend those interfaces with additional
  * functionality and type discrimination.
  */
@@ -626,7 +626,7 @@ export type SystemPrompt = string | SystemContentBlock[]
  * Data representation of a system prompt.
  * Can be a simple string or an array of system content block data for advanced caching.
  *
- * This is the data interface counterpart to SystemPrompt, following the <name>Data pattern.
+ * This is the data interface counterpart to SystemPrompt, following the "Data" pattern.
  */
 export type SystemPromptData = string | SystemContentBlockData[]
 

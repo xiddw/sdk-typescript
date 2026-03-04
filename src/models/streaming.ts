@@ -4,7 +4,7 @@ import type { JSONValue } from '../types/json.js'
 /**
  * ModelStreamEvent types for Model interactions.
  *
- * This module follows a pattern where <name>Data interfaces define the structure
+ * This module follows a pattern where "Data" interfaces define the structure
  * for objects, while corresponding classes extend those interfaces with additional
  * functionality and type discrimination.
  */
