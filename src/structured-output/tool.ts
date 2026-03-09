@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { Tool, type ToolContext, type ToolStreamGenerator } from '../tools/tool.js'
 import type { ToolSpec } from '../tools/types.js'
 import { TextBlock, ToolResultBlock } from '../types/messages.js'
-import { convertSchemaToToolSpec } from './utils.js'
+import { zodSchemaToJsonSchema } from '../tools/zod-utils.js'
 import { formatValidationErrors } from './exceptions.js'
 import type { StructuredOutputContext } from './context.js'
 
@@ -29,9 +29,46 @@ export class StructuredOutputTool extends Tool {
     super()
     this._schema = schema
     this._context = context
-    this.toolSpec = convertSchemaToToolSpec(schema, toolName)
+    this.toolSpec = this._buildToolSpec(schema, toolName)
     this.name = this.toolSpec.name
     this.description = this.toolSpec.description
+  }
+
+  /**
+   * Builds the tool specification from the Zod schema.
+   *
+   * @param schema - The Zod schema to convert
+   * @param toolName - The name to use for the tool
+   * @returns Complete tool specification
+   */
+  private _buildToolSpec(schema: z.ZodSchema, toolName: string): ToolSpec {
+    const jsonSchema = zodSchemaToJsonSchema(schema)
+    const schemaDescription = this._getSchemaDescription(schema)
+
+    return {
+      name: toolName,
+      description: `IMPORTANT: This StructuredOutputTool should only be invoked as the last and final tool before returning the completed result to the caller. ${schemaDescription}`,
+      inputSchema: jsonSchema,
+    }
+  }
+
+  /**
+   * Extracts a description from the Zod schema if available.
+   *
+   * @param schema - The Zod schema to extract description from
+   * @returns The schema description or empty string if not available
+   */
+  private _getSchemaDescription(schema: z.ZodSchema): string {
+    if ('description' in schema && typeof schema.description === 'string') {
+      return schema.description
+    }
+
+    const def = (schema as { _def?: { description?: string } })._def
+    if (def && typeof def.description === 'string') {
+      return def.description
+    }
+
+    return ''
   }
 
   /**

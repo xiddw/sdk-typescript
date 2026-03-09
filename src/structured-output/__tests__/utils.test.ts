@@ -1,16 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { convertSchemaToToolSpec, getSchemaDescription } from '../utils.js'
-import { StructuredOutputException } from '../exceptions.js'
+import { StructuredOutputTool } from '../tool.js'
+import { StructuredOutputContext } from '../context.js'
 
-describe('convertSchemaToToolSpec', () => {
+/**
+ * Helper to create a StructuredOutputTool and return its toolSpec.
+ */
+function buildToolSpec(schema: z.ZodSchema, toolName = 'TestTool') {
+  const context = new StructuredOutputContext(schema)
+  const tool = new StructuredOutputTool(schema, toolName, context)
+  return tool.toolSpec
+}
+
+describe('StructuredOutputTool tool spec', () => {
   it('converts basic schema to tool spec', () => {
     const schema = z.object({
       name: z.string(),
       age: z.number(),
     })
 
-    const toolSpec = convertSchemaToToolSpec(schema, 'TestTool')
+    const toolSpec = buildToolSpec(schema)
 
     expect(toolSpec.name).toBe('TestTool')
     expect(toolSpec.description).toContain('StructuredOutputTool')
@@ -32,39 +41,9 @@ describe('convertSchemaToToolSpec', () => {
       })
       .describe('A person object')
 
-    const toolSpec = convertSchemaToToolSpec(schema, 'TestTool')
+    const toolSpec = buildToolSpec(schema)
 
     expect(toolSpec.description).toContain('A person object')
-  })
-
-  it('throws error for schema with refinements', () => {
-    const schema = z.object({
-      name: z.string().refine((val) => val.length > 0, 'Name cannot be empty'),
-    })
-
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(StructuredOutputException)
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(
-      'Zod refinements and transforms are not supported'
-    )
-  })
-
-  it('throws error for schema with transforms', () => {
-    const schema = z.string().transform((val) => val.toUpperCase())
-
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(StructuredOutputException)
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(
-      'Zod refinements and transforms are not supported'
-    )
-  })
-
-  it('throws error for schema with superRefine', () => {
-    const schema = z.object({ name: z.string() }).superRefine((val, ctx) => {
-      if (val.name.length === 0) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Name required' })
-      }
-    })
-
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(StructuredOutputException)
   })
 
   it('accepts schema with basic validations', () => {
@@ -74,7 +53,7 @@ describe('convertSchemaToToolSpec', () => {
       email: z.string().email(),
     })
 
-    const toolSpec = convertSchemaToToolSpec(schema, 'TestTool')
+    const toolSpec = buildToolSpec(schema)
 
     expect(toolSpec.inputSchema).toMatchObject({
       type: 'object',
@@ -97,17 +76,7 @@ describe('convertSchemaToToolSpec', () => {
     })
   })
 
-  it('throws error for nested schema with refinements', () => {
-    const schema = z.object({
-      user: z.object({
-        name: z.string().refine((val) => val.length > 0),
-      }),
-    })
-
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(StructuredOutputException)
-  })
-
-  it('accepts nested schema without refinements', () => {
+  it('accepts nested schema', () => {
     const schema = z.object({
       user: z.object({
         name: z.string(),
@@ -116,7 +85,7 @@ describe('convertSchemaToToolSpec', () => {
       items: z.array(z.string()),
     })
 
-    const toolSpec = convertSchemaToToolSpec(schema, 'TestTool')
+    const toolSpec = buildToolSpec(schema)
 
     expect(toolSpec.inputSchema).toStrictEqual({
       type: 'object',
@@ -140,16 +109,10 @@ describe('convertSchemaToToolSpec', () => {
     })
   })
 
-  it('throws error for array with refinements', () => {
-    const schema = z.array(z.string().refine((val) => val.length > 0))
-
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(StructuredOutputException)
-  })
-
   it('accepts union types', () => {
     const schema = z.union([z.string(), z.number()])
 
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).not.toThrow()
+    expect(() => buildToolSpec(schema)).not.toThrow()
   })
 
   it('accepts optional fields', () => {
@@ -158,7 +121,7 @@ describe('convertSchemaToToolSpec', () => {
       age: z.number().optional(),
     })
 
-    const toolSpec = convertSchemaToToolSpec(schema, 'TestTool')
+    const toolSpec = buildToolSpec(schema)
 
     expect(toolSpec.inputSchema).toStrictEqual({
       type: 'object',
@@ -171,61 +134,23 @@ describe('convertSchemaToToolSpec', () => {
     })
   })
 
-  it('throws error for deeply nested refinements', () => {
-    const schema = z.object({
-      level1: z.object({
-        level2: z.object({
-          level3: z.string().refine((val) => val.length > 0),
-        }),
-      }),
-    })
-
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(StructuredOutputException)
-  })
-
-  it('throws error for refinements in union types', () => {
-    const schema = z.union([z.string().refine((val) => val.length > 0), z.number()])
-
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(StructuredOutputException)
-  })
-
-  it('throws error for refinements in array items', () => {
-    const schema = z.object({
-      items: z.array(
-        z.object({
-          name: z.string().refine((val) => val.length > 0),
-        })
-      ),
-    })
-
-    expect(() => convertSchemaToToolSpec(schema, 'TestTool')).toThrow(StructuredOutputException)
-  })
-})
-
-describe('getSchemaDescription', () => {
-  it('returns description from schema metadata', () => {
-    const schema = z.object({ name: z.string() }).describe('Test description')
-
-    const description = getSchemaDescription(schema)
-
-    expect(description).toBe('Test description')
-  })
-
-  it('returns empty string when no description', () => {
+  it('returns empty description when schema has none', () => {
     const schema = z.object({ name: z.string() })
 
-    const description = getSchemaDescription(schema)
+    const toolSpec = buildToolSpec(schema)
 
-    expect(description).toBe('')
+    // Description should contain the standard prefix but no additional schema description
+    expect(toolSpec.description).toBe(
+      'IMPORTANT: This StructuredOutputTool should only be invoked as the last and final tool before returning the completed result to the caller. '
+    )
   })
 
-  it('returns description from _def', () => {
+  it('includes description from _def', () => {
     const schema = z.object({ name: z.string() })
-    // Manually set description in _def
     ;(schema as any)._def.description = 'Description in _def'
 
-    const description = getSchemaDescription(schema)
+    const toolSpec = buildToolSpec(schema)
 
-    expect(description).toBe('Description in _def')
+    expect(toolSpec.description).toContain('Description in _def')
   })
 })
