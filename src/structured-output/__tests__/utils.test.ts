@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { StructuredOutputTool } from '../tool.js'
-import { StructuredOutputContext } from '../context.js'
 
 /**
  * Helper to create a StructuredOutputTool and return its toolSpec.
  */
 function buildToolSpec(schema: z.ZodSchema, toolName = 'TestTool') {
-  const context = new StructuredOutputContext(schema)
-  const tool = new StructuredOutputTool(schema, toolName, context)
+  const tool = new StructuredOutputTool(schema, toolName, () => {})
   return tool.toolSpec
 }
 

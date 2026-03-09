@@ -1,7 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { StructuredOutputTool } from '../tool.js'
-import { StructuredOutputContext } from '../context.js'
 import { TextBlock, ToolResultBlock } from '../../types/messages.js'
 import type { ToolContext } from '../../tools/tool.js'
 
@@ -9,8 +8,7 @@ describe('StructuredOutputTool', () => {
   describe('constructor', () => {
     it('creates tool with schema and name', () => {
       const schema = z.object({ name: z.string() })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const tool = new StructuredOutputTool(schema, 'TestTool', vi.fn())
 
       expect(tool.name).toBe('TestTool')
       expect(tool.description).toContain('StructuredOutputTool')
@@ -19,8 +17,7 @@ describe('StructuredOutputTool', () => {
 
     it('sets tool spec from schema', () => {
       const schema = z.object({ name: z.string(), age: z.number() })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const tool = new StructuredOutputTool(schema, 'TestTool', vi.fn())
 
       expect(tool.toolSpec.name).toBe('TestTool')
       expect(tool.toolSpec.inputSchema).toBeDefined()
@@ -28,10 +25,10 @@ describe('StructuredOutputTool', () => {
   })
 
   describe('stream', () => {
-    it('validates and stores valid input', async () => {
+    it('validates and calls onResult with valid input', async () => {
       const schema = z.object({ name: z.string(), age: z.number() })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const onResult = vi.fn()
+      const tool = new StructuredOutputTool(schema, 'TestTool', onResult)
 
       const toolContext: ToolContext = {
         toolUse: {
@@ -50,15 +47,14 @@ describe('StructuredOutputTool', () => {
         expect(result.value).toBeInstanceOf(ToolResultBlock)
         expect(result.value.status).toBe('success')
         expect(result.value.toolUseId).toBe('tool-1')
-        expect(context.hasResult()).toBe(true)
-        expect(context.getResult()).toEqual({ name: 'John', age: 30 })
+        expect(onResult).toHaveBeenCalledWith({ name: 'John', age: 30 })
       }
     })
 
     it('returns error for invalid input', async () => {
       const schema = z.object({ name: z.string(), age: z.number() })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const onResult = vi.fn()
+      const tool = new StructuredOutputTool(schema, 'TestTool', onResult)
 
       const toolContext: ToolContext = {
         toolUse: {
@@ -80,7 +76,7 @@ describe('StructuredOutputTool', () => {
         expect(result.value.content[0]).toBeInstanceOf(TextBlock)
         expect((result.value.content[0] as TextBlock).text).toContain('Validation failed')
         expect((result.value.content[0] as TextBlock).text).toContain('age')
-        expect(context.hasResult()).toBe(false)
+        expect(onResult).not.toHaveBeenCalled()
       }
     })
 
@@ -90,8 +86,7 @@ describe('StructuredOutputTool', () => {
         age: z.number(),
         email: z.string().email(),
       })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const tool = new StructuredOutputTool(schema, 'TestTool', vi.fn())
 
       const toolContext: ToolContext = {
         toolUse: {
@@ -122,8 +117,8 @@ describe('StructuredOutputTool', () => {
           age: z.number(),
         }),
       })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const onResult = vi.fn()
+      const tool = new StructuredOutputTool(schema, 'TestTool', onResult)
 
       const toolContext: ToolContext = {
         toolUse: {
@@ -140,7 +135,7 @@ describe('StructuredOutputTool', () => {
       expect(result.done).toBe(true)
       if (result.done) {
         expect(result.value.status).toBe('success')
-        expect(context.getResult()).toEqual({ user: { name: 'John', age: 30 } })
+        expect(onResult).toHaveBeenCalledWith({ user: { name: 'John', age: 30 } })
       }
     })
 
@@ -148,8 +143,8 @@ describe('StructuredOutputTool', () => {
       const schema = z.object({
         items: z.array(z.string()),
       })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const onResult = vi.fn()
+      const tool = new StructuredOutputTool(schema, 'TestTool', onResult)
 
       const toolContext: ToolContext = {
         toolUse: {
@@ -166,7 +161,7 @@ describe('StructuredOutputTool', () => {
       expect(result.done).toBe(true)
       if (result.done) {
         expect(result.value.status).toBe('success')
-        expect(context.getResult()).toEqual({ items: ['a', 'b', 'c'] })
+        expect(onResult).toHaveBeenCalledWith({ items: ['a', 'b', 'c'] })
       }
     })
 
@@ -175,8 +170,8 @@ describe('StructuredOutputTool', () => {
         name: z.string(),
         age: z.number().optional(),
       })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const onResult = vi.fn()
+      const tool = new StructuredOutputTool(schema, 'TestTool', onResult)
 
       const toolContext: ToolContext = {
         toolUse: {
@@ -193,14 +188,13 @@ describe('StructuredOutputTool', () => {
       expect(result.done).toBe(true)
       if (result.done) {
         expect(result.value.status).toBe('success')
-        expect(context.getResult()).toEqual({ name: 'John' })
+        expect(onResult).toHaveBeenCalledWith({ name: 'John' })
       }
     })
 
     it('stores error in result block on validation failure', async () => {
       const schema = z.object({ name: z.string() })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const tool = new StructuredOutputTool(schema, 'TestTool', vi.fn())
 
       const toolContext: ToolContext = {
         toolUse: {
@@ -223,8 +217,8 @@ describe('StructuredOutputTool', () => {
 
     it('overwrites previous result on multiple calls', async () => {
       const schema = z.object({ value: z.number() })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const onResult = vi.fn()
+      const tool = new StructuredOutputTool(schema, 'TestTool', onResult)
 
       // First call
       const toolContext1: ToolContext = {
@@ -239,7 +233,7 @@ describe('StructuredOutputTool', () => {
       const generator1 = tool.stream(toolContext1)
       await generator1.next()
 
-      expect(context.getResult()).toEqual({ value: 1 })
+      expect(onResult).toHaveBeenCalledWith({ value: 1 })
 
       // Second call
       const toolContext2: ToolContext = {
@@ -254,14 +248,14 @@ describe('StructuredOutputTool', () => {
       const generator2 = tool.stream(toolContext2)
       await generator2.next()
 
-      expect(context.getResult()).toEqual({ value: 2 })
-      expect(context.hasResult()).toBe(true)
+      expect(onResult).toHaveBeenCalledWith({ value: 2 })
+      expect(onResult).toHaveBeenCalledTimes(2)
     })
 
-    it('does not store result when validation fails', async () => {
+    it('does not call onResult when validation fails', async () => {
       const schema = z.object({ value: z.number() })
-      const context = new StructuredOutputContext(schema)
-      const tool = new StructuredOutputTool(schema, 'TestTool', context)
+      const onResult = vi.fn()
+      const tool = new StructuredOutputTool(schema, 'TestTool', onResult)
 
       // First call succeeds
       const toolContext1: ToolContext = {
@@ -276,8 +270,8 @@ describe('StructuredOutputTool', () => {
       const generator1 = tool.stream(toolContext1)
       await generator1.next()
 
-      expect(context.hasResult()).toBe(true)
-      expect(context.getResult()).toEqual({ value: 1 })
+      expect(onResult).toHaveBeenCalledTimes(1)
+      expect(onResult).toHaveBeenCalledWith({ value: 1 })
 
       // Second call fails
       const toolContext2: ToolContext = {
@@ -296,7 +290,8 @@ describe('StructuredOutputTool', () => {
       if (result.done) {
         expect(result.value.status).toBe('error')
       }
-      expect(context.getResult()).toEqual({ value: 1 })
+      // onResult should not have been called again
+      expect(onResult).toHaveBeenCalledTimes(1)
     })
   })
 })

@@ -48,7 +48,7 @@ import {
   AgentResultEvent,
   ToolStreamUpdateEvent,
 } from '../hooks/events.js'
-import { createStructuredOutputContext } from '../structured-output/context.js'
+import { StructuredOutputTool } from '../structured-output/tool.js'
 import { StructuredOutputException } from '../structured-output/exceptions.js'
 import type { z } from 'zod'
 import type { SessionManager } from '../session/session-manager.js'
@@ -442,9 +442,11 @@ export class Agent implements AgentData {
     let forcedToolChoice: ToolChoice | undefined = undefined
     let result: AgentResult | undefined
 
-    // Create structured output context (uses null object pattern when no schema)
+    // Set up structured output tool if a schema is provided
     const schema = options?.structuredOutputSchema ?? this._structuredOutputSchema
-    const context = createStructuredOutputContext(schema)
+    const toolName = 'strands_structured_output'
+    let structuredOutputResult: unknown = undefined
+    let structuredOutputTool: StructuredOutputTool | undefined
 
     // Emit event before the try block
     yield new BeforeInvocationEvent({ agent: this })
@@ -467,8 +469,13 @@ export class Agent implements AgentData {
 
     let caughtError: Error | undefined
     try {
-      // Register structured output tool
-      context.registerTool(this._toolRegistry)
+      // Register structured output tool if schema provided
+      if (schema) {
+        structuredOutputTool = new StructuredOutputTool(schema, toolName, (result) => {
+          structuredOutputResult = result
+        })
+        this._toolRegistry.add(structuredOutputTool)
+      }
 
       // Main agent loop - continues until model stops without requesting tools
       for (let cycleCount = 1; ; cycleCount++) {
@@ -494,7 +501,7 @@ export class Agent implements AgentData {
             }
 
             // Check if we need to force structured output tool
-            if (!context.hasResult()) {
+            if (schema && structuredOutputResult === undefined) {
               if (wasForced) {
                 // Already tried forcing - LLM refused to use the tool
                 throw new StructuredOutputException(
@@ -503,7 +510,6 @@ export class Agent implements AgentData {
               }
 
               // Force the model to use the structured output tool
-              const toolName = context.getToolName()
               forcedToolChoice = { tool: { name: toolName } }
               this._tracer.endAgentLoopSpan(cycleSpan)
               continue
@@ -514,12 +520,10 @@ export class Agent implements AgentData {
 
             // End cycle span
             this._tracer.endAgentLoopSpan(cycleSpan)
-
-            const structuredOutput = context.getResult()
             result = new AgentResult({
               stopReason: modelResult.stopReason,
               lastMessage: modelResult.message,
-              structuredOutput,
+              structuredOutput: structuredOutputResult,
             })
             return result
           }
@@ -565,8 +569,10 @@ export class Agent implements AgentData {
         ...(result?.stopReason && { stopReason: result.stopReason }),
       })
 
-      // Cleanup structured output context
-      context.cleanup(this._toolRegistry)
+      // Cleanup structured output tool
+      if (structuredOutputTool) {
+        this._toolRegistry.removeByName(structuredOutputTool.name)
+      }
 
       // Always emit final event
       yield new AfterInvocationEvent({ agent: this })

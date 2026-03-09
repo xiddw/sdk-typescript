@@ -4,7 +4,6 @@ import type { ToolSpec } from '../tools/types.js'
 import { TextBlock, ToolResultBlock } from '../types/messages.js'
 import { zodSchemaToJsonSchema } from '../tools/zod-utils.js'
 import { formatValidationErrors } from './exceptions.js'
-import type { StructuredOutputContext } from './context.js'
 
 /**
  * Tool implementation that validates LLM output against a Zod schema.
@@ -16,19 +15,19 @@ export class StructuredOutputTool extends Tool {
   readonly toolSpec: ToolSpec
 
   private _schema: z.ZodSchema
-  private _context: StructuredOutputContext
+  private _onResult: (result: unknown) => void
 
   /**
    * Creates a new StructuredOutputTool.
    *
    * @param schema - The Zod schema to validate against
    * @param toolName - The name of the tool
-   * @param context - The structured output context for result storage
+   * @param onResult - Callback invoked with the validated result on success
    */
-  constructor(schema: z.ZodSchema, toolName: string, context: StructuredOutputContext) {
+  constructor(schema: z.ZodSchema, toolName: string, onResult: (result: unknown) => void) {
     super()
     this._schema = schema
-    this._context = context
+    this._onResult = onResult
     this.toolSpec = this._buildToolSpec(schema, toolName)
     this.name = this.toolSpec.name
     this.description = this.toolSpec.description
@@ -88,8 +87,8 @@ export class StructuredOutputTool extends Tool {
       // Validate input against schema
       const validated = this._schema.parse(toolUse.input)
 
-      // Store validated result in context
-      this._context.storeResult(toolUse.toolUseId, validated)
+      // Pass validated result to caller via callback
+      this._onResult(validated)
 
       // Return success result
       return new ToolResultBlock({
